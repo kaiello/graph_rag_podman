@@ -179,3 +179,14 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ------------------------------------
+# AWS SAM / Lambda / Podman Specific
+# ------------------------------------
+
+# The AWS SAM CLI build directory. This contains the deployment package.
+.aws-sam/
+
+# Folder used by Podman Desktop for machine configuration (if created in the root)
+# Usually fine to leave out, but good practice if you notice machine files here.
+.podman/

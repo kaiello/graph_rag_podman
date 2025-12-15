@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Docling Multi-Format RAG Pre-processor
+
+Globals:
+  Function:
+    Timeout: 300 # Set a higher timeout (e.g., 5 minutes) due to complex processing
+    MemorySize: 2048 # Increase memory for heavy-duty libraries like Docling/Pandas
+    Runtime: python3.11
+
+Resources:
+  DoclingIngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.lambda_handler # Points to app.py and lambda_handler function
+      CodeUri: ./
+      # Define S3 permissions needed for the Lambda to read the input file and write output
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref InputBucket
+        - S3WritePolicy:
+            BucketName: !Ref OutputBucket
+      Environment:
+        Variables:
+          OUTPUT_BUCKET: !Ref OutputBucket
+
+Outputs:
+  DoclingIngestFunctionArn:
+    Description: "Docling Ingest Lambda Function ARN"
+    Value: !GetAtt DoclingIngestFunction.Arn
