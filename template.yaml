@@ -2,29 +2,60 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Docling Multi-Format RAG Pre-processor
 
+Parameters:
+  InputBucketName:
+    Type: String
+    Default: my-docling-input-data-2025
+    Description: Name of the existing S3 bucket for input files
+  OutputBucketName:
+    Type: String
+    Default: my-docling-output-artifacts-2025
+    Description: Name of the existing S3 bucket for output artifacts
+
 Globals:
   Function:
-    Timeout: 300 # Set a higher timeout (e.g., 5 minutes) due to complex processing
-    MemorySize: 2048 # Increase memory for heavy-duty libraries like Docling/Pandas
-    Runtime: python3.11
+    Timeout: 900 # Increased to 15 mins (Max) for large PDF/OCR jobs
+    MemorySize: 4096 # Increased to 4GB for ML model inference
+    Environment:
+      Variables:
+        HF_HOME: /tmp/hf_home
+        TORCH_HOME: /tmp/torch_home
 
 Resources:
+  # 3. Lambda Function (Container Image based)
   DoclingIngestFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: app.lambda_handler # Points to app.py and lambda_handler function
-      CodeUri: ./
-      # Define S3 permissions needed for the Lambda to read the input file and write output
+      PackageType: Image
+      Architectures:
+        - x86_64
+      # Define S3 permissions
       Policies:
         - S3ReadPolicy:
-            BucketName: !Ref InputBucket
+            BucketName: !Ref InputBucketName
         - S3WritePolicy:
-            BucketName: !Ref OutputBucket
+            BucketName: !Ref OutputBucketName
       Environment:
         Variables:
-          OUTPUT_BUCKET: !Ref OutputBucket
+          OUTPUT_BUCKET: !Ref OutputBucketName
+          USE_VLM: "false"
+          PRETTY_JSON: "true"
+      # NOTE: Since the Input Bucket is external (created manually), 
+      # we cannot automatically attach the S3 Event Trigger here without importing the bucket.
+      # You must configure the S3 Event Notification manually in the AWS Console:
+      # Bucket -> Properties -> Event notifications -> Create event notification -> Select Lambda Function
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: v1
 
 Outputs:
   DoclingIngestFunctionArn:
     Description: "Docling Ingest Lambda Function ARN"
     Value: !GetAtt DoclingIngestFunction.Arn
+  InputBucketName:
+    Description: "Upload files here"
+    Value: !Ref InputBucketName
+  OutputBucketName:
+    Description: "Retrieve results here"
+    Value: !Ref OutputBucketName

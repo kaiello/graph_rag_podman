@@ -1,0 +1,15 @@
+# Core Lambda dependencies
+boto3
+
+# Libraries explicitly imported in your script
+docling
+unstructured
+pandas
+Pillow # The package name for PIL/Image
+
+# Docling dependencies for Table Markdown Export
+tabulate 
+
+# Other possible hidden dependencies (add if you encounter errors)
+# python-magic-bin # For file type detection on Windows
+# lxml # For some XML/HTML processing
