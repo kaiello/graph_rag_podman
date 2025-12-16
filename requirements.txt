@@ -10,6 +10,9 @@ Pillow # The package name for PIL/Image
 # Docling dependencies for Table Markdown Export
 tabulate 
 
+# For intelligent markdown chunking
+langchain-text-splitters
+
 # Other possible hidden dependencies (add if you encounter errors)
 # python-magic-bin # For file type detection on Windows
 # lxml # For some XML/HTML processing

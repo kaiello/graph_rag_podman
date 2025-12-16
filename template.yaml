@@ -29,12 +29,18 @@ Resources:
       PackageType: Image
       Architectures:
         - x86_64
-      # Define S3 permissions
+      # Define S3 and Bedrock permissions
       Policies:
         - S3ReadPolicy:
             BucketName: !Ref InputBucketName
         - S3WritePolicy:
             BucketName: !Ref OutputBucketName
+        # NEW: Permission to invoke Titan Embeddings
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "arn:aws:bedrock:*:*:foundation-model/amazon.titan-embed-text-v2:0"
       Environment:
         Variables:
           OUTPUT_BUCKET: !Ref OutputBucketName
