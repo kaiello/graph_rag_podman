@@ -1,4 +1,0 @@
-boto3
-langchain
-langchain-text-splitters
-langchain-community
