@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
 """
-Integrated Docling Extractor v6.5 (Graph RAG Schema)
-Features:
-1. S3 Triggered: Processes files uploaded to S3.
-2. Multi-Format: Supports PDF, Images, DOCX, PPTX, HTML, MD.
-3. Page Splitting: Exports Markdown, JSON, and Figures SEPARATELY for each page/slide.
-4. Header Snapping: Automatically expands figures to include the Slide/Section Title.
-5. Smart Figure Merging: Reconstructs "Quads" from fragmented detections.
-6. Safety Checks: Skips locked files and sanitizes filenames.
-7. RAG Chunking: Generates JSONL with 'kb_Content_Block' schema and embeddings.
+App 1: Ingestor (Physical Extraction)
+Responsibility: Convert docs to Markdown/JSON, extract tables/figures, save to S3.
 """
 from __future__ import annotations
 import logging
@@ -18,7 +11,6 @@ import json
 import os
 import shutil
 import boto3
-import uuid
 import zlib
 import base64
 from pathlib import Path
@@ -52,19 +44,14 @@ from docling.datamodel.document import (
     SectionHeaderItem, 
     ListItem
 )
-# VLM Support
 from docling.pipeline.vlm_pipeline import VlmPipeline
 
 # Unstructured Support
 from unstructured.documents.elements import Text, Table, Title, ListItem as UnstructuredListItem, ElementMetadata
 from unstructured.staging.base import elements_to_json
 
-# --- NEW: Chunking & Embedding Dependencies ---
-from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
-
 # Initialize AWS Clients
 s3_client = boto3.client('s3')
-bedrock_client = boto3.client('bedrock-runtime', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
 
 def setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
@@ -82,200 +69,7 @@ def sanitize_filename(name: str) -> str:
     return name
 
 # -------------------------------------------------------------------------
-# 2. RAG PIPELINE: CHUNKING & EMBEDDING
-# -------------------------------------------------------------------------
-class ChunkProcessor:
-    def __init__(self, chunk_size=2048, chunk_overlap=128):
-        """
-        Initializes the chunking logic.
-        chunk_size: characters (approx 512 tokens * 4 chars/token = ~2048 chars)
-        """
-        # 1. First split by Markdown headers to keep logical sections together
-        self.headers_to_split_on = [
-            ("#", "Header 1"),
-            ("##", "Header 2"),
-            ("###", "Header 3"),
-        ]
-        self.markdown_splitter = MarkdownHeaderTextSplitter(
-            headers_to_split_on=self.headers_to_split_on, 
-            strip_headers=False
-        )
-        
-        # 2. Then split recursively to respect token limits
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, 
-            chunk_overlap=chunk_overlap,
-            separators=["\n\n", "\n", " ", ""]
-        )
-
-    def get_embedding(self, text: str) -> List[float]:
-        """Invokes AWS Titan Embeddings v2 via Bedrock"""
-        try:
-            # Clean text slightly before embedding
-            clean_text = text.replace("\n", " ").strip()
-            if not clean_text:
-                return []
-            
-            body = json.dumps({
-                "inputText": clean_text,
-                "dimensions": 1024, # Titan v2 supports 256, 512, 1024
-                "normalize": True
-            })
-            
-            response = bedrock_client.invoke_model(
-                modelId="amazon.titan-embed-text-v2:0",
-                contentType="application/json",
-                accept="application/json",
-                body=body
-            )
-            
-            response_body = json.loads(response['body'].read())
-            return response_body.get("embedding")
-        except Exception as e:
-            _log.error(f"Bedrock embedding failed: {e}")
-            return []
-
-    def create_chunks_for_page(self, markdown_text: str, page_number: int, base_filename: str, s3_uri: str, start_index: int, orig_elements: str = None) -> List[dict]:
-        """
-        Splits a single page's markdown and generates formatted chunks.
-        """
-        chunks_data = []
-        
-        # Split 1: Logical Sections (Markdown)
-        header_splits = self.markdown_splitter.split_text(markdown_text)
-        
-        # Split 2: Token Limits (Recursive)
-        final_docs = self.text_splitter.split_documents(header_splits)
-        
-        current_index = start_index
-
-        for doc in final_docs:
-            chunk_text = doc.page_content
-            if not chunk_text.strip():
-                continue
-
-            # Call Bedrock
-            embedding = self.get_embedding(chunk_text)
-            
-            # Construct ID
-            chunk_id = f"{base_filename}_chunk_{current_index}"
-            
-            # Construct Metadata
-            metadata = {
-                "page_number": page_number,
-                "orig_elements": orig_elements
-            }
-
-            # Graph RAG Schema
-            chunk_record = {
-                "entity_type": "kb_Content_Block",
-                "id": chunk_id,
-                "type": "text",
-                "text": chunk_text,
-                "embeddings": embedding, # FIXED: Key name matches local process
-                "page_number": page_number,
-                "document_uri": base_filename,
-                "bbox": None,
-                "metadata": metadata
-            }
-            chunks_data.append(chunk_record)
-            current_index += 1
-            
-        return chunks_data
-
-def process_document_chunks(doc: DoclingDocument, output_dir: Path, base_name: str, s3_uri: str):
-    """
-    Iterates through the document PAGE BY PAGE to ensure chunks have accurate page numbers.
-    Also generates 'orig_elements' blob for reconstruction.
-    """
-    chunks_dir = output_dir / "chunks"
-    chunks_dir.mkdir(exist_ok=True)
-    
-    processor = ChunkProcessor(chunk_size=2048, chunk_overlap=200)
-    
-    all_chunks = []
-    global_chunk_index = 0
-    
-    _log.info("Creating Semantic Chunks (Per Page)...")
-
-    # Iterate pages to maintain page_number accuracy
-    for page_no, page in doc.pages.items():
-        
-        # 1. Collect Data for this specific page
-        page_md_lines = []
-        page_elements = [] # For orig_elements reconstruction
-        
-        for item, level in doc.iterate_items():
-            if not (hasattr(item, "prov") and item.prov and item.prov[0].page_no == page_no):
-                continue
-            
-            # --- Markdown Construction ---
-            if isinstance(item, SectionHeaderItem):
-                page_md_lines.append(f"## {item.text}\n")
-            elif isinstance(item, ListItem):
-                page_md_lines.append(f"- {item.text}")
-            elif isinstance(item, TextItem):
-                page_md_lines.append(f"{item.text}\n")
-            elif isinstance(item, TableItem):
-                # For tables, we include the markdown representation
-                try:
-                    df = item.export_to_dataframe(doc)
-                    md_table = df.to_markdown(index=False)
-                    page_md_lines.append(f"\n{md_table}\n")
-                except:
-                    page_md_lines.append(f"\n[TABLE]\n")
-
-            # --- Elements Collection (for orig_elements) ---
-            metadata = ElementMetadata(page_number=page_no)
-            if isinstance(item, TableItem):
-                try:
-                    csv = item.export_to_dataframe(doc=doc).to_csv(index=False)
-                    html = item.export_to_html(doc=doc)
-                    metadata.text_as_html = html
-                    page_elements.append(Table(text=csv, metadata=metadata))
-                except: pass
-            elif isinstance(item, SectionHeaderItem):
-                page_elements.append(Title(text=item.text, metadata=metadata))
-            elif isinstance(item, ListItem):
-                page_elements.append(UnstructuredListItem(text=item.text, metadata=metadata))
-            elif isinstance(item, TextItem):
-                page_elements.append(Text(text=item.text, metadata=metadata))
-
-        page_markdown = "\n".join(page_md_lines)
-        
-        # 2. Generate orig_elements blob (Compressed JSON)
-        orig_elements_str = None
-        if page_elements:
-            try:
-                json_str = elements_to_json(page_elements)
-                compressed_data = zlib.compress(json_str.encode("utf-8"))
-                orig_elements_str = base64.b64encode(compressed_data).decode("utf-8")
-            except Exception as e:
-                _log.warning(f"Failed to generate orig_elements for page {page_no}: {e}")
-
-        # 3. Process chunks for this page
-        if page_markdown.strip():
-            page_chunks = processor.create_chunks_for_page(
-                markdown_text=page_markdown,
-                page_number=page_no,
-                base_filename=base_name,
-                s3_uri=s3_uri,
-                start_index=global_chunk_index,
-                orig_elements=orig_elements_str
-            )
-            all_chunks.extend(page_chunks)
-            global_chunk_index += len(page_chunks)
-
-    # Save as JSONL
-    jsonl_path = chunks_dir / f"{base_name}_chunks.jsonl"
-    with open(jsonl_path, "w", encoding="utf-8") as f:
-        for record in all_chunks:
-            f.write(json.dumps(record) + "\n")
-            
-    _log.info(f"✅ Saved {len(all_chunks)} embeddings to {jsonl_path}")
-
-# -------------------------------------------------------------------------
-# 3. PIPELINE CONFIGURATION
+# 2. PIPELINE CONFIGURATION
 # -------------------------------------------------------------------------
 def get_configured_converter(use_vlm: bool = False) -> DocumentConverter:
     allowed_formats = [
@@ -316,7 +110,7 @@ def get_configured_converter(use_vlm: bool = False) -> DocumentConverter:
     )
 
 # -------------------------------------------------------------------------
-# 4. GEOMETRY & MERGING LOGIC
+# 3. GEOMETRY & MERGING LOGIC
 # -------------------------------------------------------------------------
 def merge_nearby_bboxes(bboxes, distance_threshold=50):
     if not bboxes:
@@ -371,7 +165,7 @@ def add_padding(bbox, width, height, padding=15):
     )
 
 # -------------------------------------------------------------------------
-# 5. ASSET EXPORT (Global & Per-Page)
+# 4. ASSET EXPORT (Global & Per-Page)
 # -------------------------------------------------------------------------
 def export_enhanced_assets(doc: DoclingDocument, output_dir: Path, base_name: str):
     tables_dir = output_dir / "tables"
@@ -388,9 +182,7 @@ def export_enhanced_assets(doc: DoclingDocument, output_dir: Path, base_name: st
                 with open(tables_dir / f"{base_name}_table_{i+1}.md", "w", encoding="utf-8") as f:
                     f.write(df.to_markdown(index=False))
             except ImportError:
-                _log.warning(f"Could not export Table {i+1} to Markdown. Please install 'tabulate'.")
-            except Exception as e:
-                _log.debug(f"Failed to export markdown for table {i+1}: {e}")
+                pass
         except Exception as e:
              _log.debug(f"Failed to export table {i+1} to CSV: {e}")
 
@@ -423,7 +215,7 @@ def export_enhanced_assets(doc: DoclingDocument, output_dir: Path, base_name: st
                 _log.warning(f"Crop failed on page {page_no}: {e}")
 
 # -------------------------------------------------------------------------
-# 6. DATA MAPPING
+# 5. DATA MAPPING
 # -------------------------------------------------------------------------
 def map_docling_to_unstructured(docling_doc: DoclingDocument) -> List[dict]:
     unstructured_elements = []
@@ -449,7 +241,7 @@ def map_docling_to_unstructured(docling_doc: DoclingDocument) -> List[dict]:
     return unstructured_elements
 
 # -------------------------------------------------------------------------
-# 7. SPLIT BY PAGE LOGIC
+# 6. SPLIT BY PAGE LOGIC
 # -------------------------------------------------------------------------
 def save_per_page_results(doc: DoclingDocument, output_root: Path, base_name: str, pretty: bool):
     """
@@ -458,21 +250,17 @@ def save_per_page_results(doc: DoclingDocument, output_root: Path, base_name: st
     pages_root = output_root / "pages"
     pages_root.mkdir(exist_ok=True)
 
-    # Iterate over all pages found in the document
     for page_no in doc.pages.keys():
         page_dir = pages_root / f"{base_name}_pg{page_no}"
         page_dir.mkdir(exist_ok=True)
 
-        # 1. Filter Elements for this page
         page_elements = []
         page_md_lines = []
         
-        # Iterate items again to filter by page
         for item, level in doc.iterate_items():
             if not (hasattr(item, "prov") and item.prov and item.prov[0].page_no == page_no):
                 continue
             
-            # Markdown Construction
             if isinstance(item, SectionHeaderItem):
                 page_md_lines.append(f"## {item.text}\n")
             elif isinstance(item, ListItem):
@@ -482,7 +270,6 @@ def save_per_page_results(doc: DoclingDocument, output_root: Path, base_name: st
             elif isinstance(item, TableItem):
                 page_md_lines.append(f"\n[TABLE ON PAGE {page_no}]\n")
 
-            # Unstructured Element Construction
             metadata = ElementMetadata(page_number=page_no)
             if isinstance(item, TableItem):
                 try:
@@ -496,15 +283,13 @@ def save_per_page_results(doc: DoclingDocument, output_root: Path, base_name: st
             elif isinstance(item, TextItem):
                 page_elements.append(Text(text=item.text, metadata=metadata))
 
-        # 2. Save Per-Page Markdown
         with open(page_dir / f"{base_name}_pg{page_no}.md", "w", encoding="utf-8") as f:
             f.write("\n".join(page_md_lines))
 
-        # 3. Save Per-Page JSON
         with open(page_dir / f"{base_name}_pg{page_no}.json", "w", encoding="utf-8") as f:
             f.write(elements_to_json(page_elements, indent=2 if pretty else None))
 
-def save_result(result, output_root: Path, pretty: bool, s3_uri: str):
+def save_result(result, output_root: Path, pretty: bool):
     file_path = result.input.file
     
     if result.status != ConversionStatus.SUCCESS:
@@ -533,10 +318,6 @@ def save_result(result, output_root: Path, pretty: bool, s3_uri: str):
 
         # 4. Export Split Pages
         save_per_page_results(doc, file_output_dir, clean_stem, pretty)
-
-        # 5. NEW: Generate Chunks & Embeddings (Page Aware)
-        # We pass the original doc object to iterate pages and get metadata
-        process_document_chunks(doc, file_output_dir, clean_stem, s3_uri)
         
         _log.info(f"✅ Saved Pipeline Output: {file_output_dir}")
 
@@ -544,7 +325,7 @@ def save_result(result, output_root: Path, pretty: bool, s3_uri: str):
         _log.error(f"⚠️ Error saving results for {file_path.name}: {e}", exc_info=True)
 
 # -------------------------------------------------------------------------
-# 8. LAMBDA HANDLER
+# 7. LAMBDA HANDLER
 # -------------------------------------------------------------------------
 def upload_directory_to_s3(local_dir: Path, bucket: str, s3_prefix: str):
     for root, dirs, files in os.walk(local_dir):
@@ -557,23 +338,19 @@ def upload_directory_to_s3(local_dir: Path, bucket: str, s3_prefix: str):
             s3_client.upload_file(str(local_path), bucket, s3_key)
 
 def lambda_handler(event, context):
-    # Configuration from Environment Variables
     use_vlm = os.environ.get('USE_VLM', 'false').lower() == 'true'
     pretty_json = os.environ.get('PRETTY_JSON', 'false').lower() == 'true'
     
-    # Temporary directories
     tmp_root = Path("/tmp")
     input_dir = tmp_root / "input"
     output_dir = tmp_root / "output"
     
-    # Initial cleanup
     if input_dir.exists(): shutil.rmtree(input_dir)
     if output_dir.exists(): shutil.rmtree(output_dir)
     input_dir.mkdir()
     output_dir.mkdir()
 
     for record in event['Records']:
-        # Clear directories for isolation per file
         if input_dir.exists(): shutil.rmtree(input_dir)
         if output_dir.exists(): shutil.rmtree(output_dir)
         input_dir.mkdir()
@@ -581,9 +358,8 @@ def lambda_handler(event, context):
 
         bucket = record['s3']['bucket']['name']
         key = unquote_plus(record['s3']['object']['key'])
-        s3_uri = f"s3://{bucket}/{key}"
         
-        _log.info(f"Processing file: {s3_uri}")
+        _log.info(f"Processing file: s3://{bucket}/{key}")
         
         local_filename = Path(key).name
         local_input_path = input_dir / local_filename
@@ -594,45 +370,25 @@ def lambda_handler(event, context):
             _log.error(f"Failed to download {key} from {bucket}: {e}")
             continue
 
-        # Determine Data Type for Output Folder
         ext = local_input_path.suffix.lower()
-        if ext == '.pdf':
-            data_type = "pdf"
-        elif ext in ['.docx', '.doc']:
-            data_type = "word"
-        elif ext in ['.pptx', '.ppt']:
-            data_type = "powerpoint"
-        elif ext in ['.html', '.htm']:
-            data_type = "html"
-        elif ext in ['.md', '.markdown']:
-            data_type = "markdown"
-        elif ext == '.json':
-            data_type = "json"
-        elif ext in ['.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif']:
-            data_type = "image"
-        else:
-            data_type = "other"
+        if ext == '.pdf': data_type = "pdf"
+        elif ext in ['.docx', '.doc']: data_type = "word"
+        elif ext in ['.pptx', '.ppt']: data_type = "powerpoint"
+        elif ext in ['.html', '.htm']: data_type = "html"
+        elif ext in ['.md', '.markdown']: data_type = "markdown"
+        elif ext == '.json': data_type = "json"
+        elif ext in ['.png', '.jpg', '.jpeg']: data_type = "image"
+        else: data_type = "other"
 
         converter = get_configured_converter(use_vlm=use_vlm)
         
         _log.info("🔄 Starting Conversion...")
-        start_time = time.time()
-        
-        # Convert single file
         results = converter.convert_all([local_input_path], raises_on_error=False)
         
         for result in results:
-            # Pass s3_uri for metadata in chunking
-            save_result(result, output_dir, pretty_json, s3_uri)
+            save_result(result, output_dir, pretty_json)
 
-        total_time = time.time() - start_time
-        _log.info(f"🎉 Conversion complete in {total_time:.2f}s")
-        
-        # Upload results back to S3
         output_bucket = os.environ.get('OUTPUT_BUCKET', bucket)
-        # Modified prefix logic: processed/<data_type>
-        # Note: save_result creates a subdir "output_{data_source}", so full path will be:
-        # processed/<data_type>/output_{data_source}/...
         output_prefix = f"processed/{data_type}"
         upload_directory_to_s3(output_dir, output_bucket, output_prefix)
         

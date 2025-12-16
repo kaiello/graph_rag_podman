@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  App 2: Graph Builder (Embeddings Only)
+  Triggers on 'full.md' from App 1, chunks content, generates embeddings via Bedrock, and organizes output.
+
+Parameters:
+  InputBucketName:
+    Type: String
+    Description: Name of the existing S3 bucket (App 1 Output Bucket)
+    Default: my-docling-output-artifacts-2025 
+
+Globals:
+  Function:
+    Timeout: 900              # 15 Minutes
+    MemorySize: 3008          # 3GB
+    Runtime: python3.11
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        BEDROCK_EMBED_MODEL_ID: "amazon.titan-embed-text-v2:0"
+        LOG_LEVEL: "INFO"
+
+Resources:
+  GraphBuilderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src.app.lambda_handler
+      Policies:
+        # Read/Write access to the shared bucket
+        - S3CrudPolicy:
+            BucketName: !Ref InputBucketName
+        # Bedrock Access for Embeddings
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "arn:aws:bedrock:*:*:foundation-model/amazon.titan-embed-text-v2:0"
+      
+      # EVENT TRIGGER NOTE:
+      # Because the bucket exists in another stack, SAM cannot reliably attach the event here.
+      # You should configure the S3 Event Notification manually in the Console:
+      # S3 -> [InputBucketName] -> Properties -> Event Notifications -> Create
+      # Prefix: processed/
+      # Suffix: full.md
+      # Destination: Lambda Function -> [This Function]
+
+  # If you wanted this stack to OWN the bucket, you would uncomment this:
+  # PipelineBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: !Ref InputBucketName
+
+Outputs:
+  GraphBuilderFunctionArn:
+    Description: "Graph Builder Lambda Function ARN"
+    Value: !GetAtt GraphBuilderFunction.Arn
