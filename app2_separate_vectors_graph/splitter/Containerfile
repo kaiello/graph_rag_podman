@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Copy the app code
-COPY app.py .
+COPY src/app.py .
 
 # Set the CMD to your handler (filename.function_name)
 CMD ["app.lambda_handler"]
