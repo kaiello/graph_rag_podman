@@ -605,3 +605,35 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': json.dumps('Processing complete')
     }
+if __name__ == "__main__":
+    import json
+    import os
+
+    # Load the event template
+    try:
+        with open("event.json", "r") as f:
+            event = json.load(f)
+    except FileNotFoundError:
+        print("event.json not found, constructing a minimal event object.")
+        event = {"Records": [{"s3": {"bucket": {"name": ""}, "object": {"key": ""}}}]}
+
+    # Override with environment variables if present
+    bucket_name = os.environ.get("S3_BUCKET_NAME")
+    object_key = os.environ.get("S3_OBJECT_KEY") # Optional, to override the file being processed
+
+    if bucket_name:
+        # Update the bucket name in the event
+        # The structure is event['Records'][0]['s3']['bucket']['name']
+        if 'Records' in event and len(event['Records']) > 0:
+            event['Records'][0]['s3']['bucket']['name'] = bucket_name
+            # Also update ARN to look consistent although not strictly used by simple logic usually
+            event['Records'][0]['s3']['bucket']['arn'] = f"arn:aws:s3:::{bucket_name}"
+
+    if object_key:
+         if 'Records' in event and len(event['Records']) > 0:
+            event['Records'][0]['s3']['object']['key'] = object_key
+
+    print(f"Starting processing with bucket: {event['Records'][0]['s3']['bucket']['name']}")
+
+    # Execute the handler
+    lambda_handler(event, None)
