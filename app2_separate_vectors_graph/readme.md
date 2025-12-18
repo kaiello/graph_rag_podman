@@ -134,5 +134,17 @@ Because the input bucket (`my-docling-output-artifacts-2025`) is an **existing e
 ### 2. Environment Variables
 
 * **LLM_MODEL:** Defaults to `amazon.titan-text-express-v1`.
-* **VECTOR_BUCKET:** The bucket where your upstream splitter saves vector files.
+* **CHUNKS:** The bucket where the upstream splitter saves chunked, embedded file based on source document.
+* **TEXT+METADATA_VECTOR_BUCKET:** The bucket where the embedded file is split into two separate files, 1-text+metadata file and 2-vector embeddings file. 
+* **FIRST GRAPH BUCKET** The bucket where the LLM generated nodes and entities file from the text+metadata file.
+* **INTERMEDIATE GRAPH TEXT BUCKET** The bucket where the LLM generated nodes and entities are cobmined with the text+metadata file.
+* **FINAL GRAPH BUCKET** The bucket where the zipped up file: 1-text+metadata file, 2-vector embeddings file, 3-graph nodes and edges. 
 ```
+
+Key                 IntermediateBucketName
+Description         Intermediate graph text bucket
+Value               graph-data-text
+
+Key                 FinalBucketName
+Description         Final merged graph data bucket
+Value               graph-data-final
