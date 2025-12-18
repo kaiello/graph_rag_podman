@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "docling-source-ingest"
+resolve_s3 = true
+s3_prefix = "docling-source-ingest"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "InputBucketName=\"my-docling-input-data-2025\" OutputBucketName=\"graph-chunks\""
+image_repositories = ["DoclingIngestFunction=757905896558.dkr.ecr.us-east-1.amazonaws.com/doclingsourceingest8cc2c40e/doclingingestfunction798cb798repo"]
+
+[default.global.parameters]
+region = "us-east-1"

@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "docling-ingest-app-1"
+resolve_s3 = true
+s3_prefix = "docling-ingest-app-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "GraphInputBucketName=\"graph-chunks\" FinalOutputBucketName=\"graph-final-artifacts\""
+image_repositories = ["GraphProcessorFunction=757905896558.dkr.ecr.us-east-1.amazonaws.com/doclingingestapp17bf57d9b/graphprocessorfunction64e87a2erepo"]
+
+[default.global.parameters]
+region = "us-east-1"
