@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Graph RAG Pipeline: Extraction + Merging
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 1024
+    LoggingConfig:
+      LogFormat: JSON
+
+Resources:
+  # ==================================================================
+  # 1. BUCKETS
+  # ==================================================================
+  GraphDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: graph-data-text
+
+  GraphDataFinalBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # FIX: Changed underscores to hyphens
+      BucketName: graph-data-final
+
+  # ==================================================================
+  # 2. GRAPH MERGER
+  # ==================================================================
+  GraphMergerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerTag: v1
+      DockerContext: ./graph_merger
+      Dockerfile: Dockerfile
+    Properties:
+      PackageType: Image
+      MemorySize: 2048
+      Timeout: 300
+      Environment:
+        Variables:
+          VECTOR_BUCKET: "my-docling-output-artifacts-2025" 
+          # FIX: Update env var to match new bucket name
+          FINAL_BUCKET: graph-data-final 
+      Policies:
+        - S3ReadPolicy:
+            BucketName: graph-data-text
+        - S3ReadPolicy:
+            BucketName: "my-docling-output-artifacts-2025"
+        - S3WritePolicy:
+            # FIX: Update policy to match new bucket name
+            BucketName: graph-data-final
+      Events:
+        GraphFileArrived:
+          Type: S3
+          Properties:
+            Bucket: !Ref GraphDataBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: _graph_data.jsonl
+
+  # ==================================================================
+  # 3. GRAPH EXTRACTOR
+  # ==================================================================
+  GraphExtractorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: graph_extractor/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Timeout: 900
+      Environment:
+        Variables:
+          GRAPH_BUCKET: graph-data-text
+          LLM_MODEL: "amazon.titan-text-express-v1"
+      Policies:
+        - S3ReadPolicy:
+            BucketName: "my-docling-output-artifacts-2025"
+        - S3WritePolicy:
+            BucketName: graph-data-text
+        - Statement:
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: "*"
+
+Outputs:
+  FinalBucketName:
+    Description: "Final merged graph data bucket"
+    Value: !Ref GraphDataFinalBucket
+  IntermediateBucketName:
+    Description: "Intermediate graph text bucket"
+    Value: !Ref GraphDataBucket

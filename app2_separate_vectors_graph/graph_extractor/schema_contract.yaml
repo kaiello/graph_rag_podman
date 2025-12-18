@@ -1,0 +1,634 @@
+#schema: v2.5
+#description: Semantic contract defining entities and relations for knowledge graph extraction, including DOD budgeting, logistics, threat intelligence, and operational domains. 
+entities:
+  # --- CORE DOMAIN ENTITIES ---
+  dbo_Organisation:
+      labels: ["Organization", "Org"]
+      key: ["uri", "name"]
+      required_one_of: ["uri", "name"]
+      optional: 
+        - "name"
+        - "alias"
+        - "acronym"
+        - "role"
+        - "org_type"    # e.g., "University", "Commercial", "FFRDC"
+        - "naics_code"  # For identifying specific industries (e.g., R&D)
+
+  dbo_Location:
+      labels: ["kb_Location", "Location"]
+      key: ["uri", "name"]
+      required_one_of: ["uri", "name"]
+      optional: 
+        - "latitude"
+        - "longitude"
+        - "city"
+        - "state"       # Essential for "NC" filter
+        - "country"
+
+  dbo_Technology:
+    labels: ["kb_Technology", "Technology"]
+    key: ["uri"]
+    required: ["uri"]
+    optional: ["name", "description", "projected_availability_date"]
+
+  kb_Program:
+    labels: ["Program"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["description", "status", "problem_statement", "benefits", "acronym"]
+
+  # NEW: DOD BUDGETING & HIERARCHY EXTENSIONS
+  kb_Program_Element:
+    labels: ["Program_Element", "PE", "Budget_Line_Item"]
+    key: ["pe_number"]
+    required: ["pe_number", "title"]
+    optional: 
+      - "budget_activity"
+      - "appropriation_code"
+      - "mission_description"
+      - "r1_line_number"
+
+  kb_Project:
+    labels: ["Project"]
+    key: ["code", "name"]
+    required_one_of: ["code", "name"]
+    optional: 
+      - "sponsor"
+      - "objective"
+      - "budget_usd"
+      - "start_date"
+      - "end_time"
+      - "status"
+      - "acronym"
+      - "description"
+
+  # NEW: FINANCIAL GRANULARITY
+  kb_Budget_Profile:
+    labels: ["Budget_Profile", "Funding_Summary"]
+    key: ["id"]
+    required: ["fiscal_year", "amount"]
+    optional: 
+      - "funding_category"      # e.g., "CongressionalAdd", "Reprogramming", "Base"
+      - "appropriation_name"
+      - "description"           # e.g., "Wood to Jet Fuel"
+      - "context"               # e.g., "PriorYear", "CostToComplete"
+
+  # NEW: TEMPORAL NARRATIVES (Accomplishments vs Plans)
+  kb_Narrative_Report:
+    labels: ["Narrative", "Accomplishment", "Plan", "Justification"]
+    key: ["id"]
+    required: ["text", "type"]  # type: "Accomplishment", "PlannedProgram", "MissionDescription"
+    optional: 
+      - "fiscal_year"
+      - "title"                 # e.g., "FY 2024 Accomplishments"
+
+  kb_Person:
+    labels: ["Person"]
+    key: ["email", "name"]
+    required_one_of: ["email", "name"]
+    optional: ["name", "phone", "title", "role"]
+
+  # --- SCOR / LOGISTICS EXTENSIONS ---
+  kb_Logistics_Process:
+    labels: ["Logistics_Process", "SCOR_Process"]
+    key: ["name"]
+    required: ["name"]
+    optional: 
+      - "scor_id"       # e.g., "sS1"
+      - "type"          # Plan, Source, Make, Deliver, Return
+      - "definition"
+  
+  kb_Metric:
+    labels: ["Metric", "KPI", "Performance_Attribute"]
+    key: ["name"]
+    required: ["name"]
+    optional: 
+      - "unit"          
+      - "category"      # Reliability, Responsiveness, Agility, Cost, Asset Mgmt
+
+  # --- STIX / THREAT INTEL EXTENSIONS ---
+  kb_Campaign:
+    labels: ["Campaign", "Operation"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["objective", "start_date", "end_time", "status", "description"]
+
+  kb_TTP:
+    labels: ["TTP", "Tactic", "Technique", "Attack_Pattern"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["description", "phase", "kill_chain_id"]
+
+  kb_Vulnerability:
+    labels: ["Vulnerability", "CVE", "Weakness"]
+    key: ["cve_id", "name"]
+    required_one_of: ["cve_id", "name"]
+    optional: ["description", "severity"]
+
+  kb_Threat_Actor:
+    labels: ["Threat_Actor", "Adversary"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["motivation", "sophistication", "aliases"]
+
+  kb_Incident:
+    labels: ["Incident", "Breach"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["start_date", "end_time", "status", "impact"]
+
+  kb_Indicator:
+    labels: ["Indicator", "IOC"]
+    key: ["value"]
+    required: ["value"]
+    optional: ["type", "description"]
+
+  # --- C2 / OPERATIONAL ENTITIES ---
+  kb_Operation:
+    labels: ["Operation", "Mission"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["type", "start_date", "end_time", "status", "outcome"]
+
+  kb_Order:
+    labels: ["Order", "Directive"]
+    key: ["id", "name"]
+    required_one_of: ["id", "name"]
+    optional: ["type", "issuer", "recipient", "text"]
+
+  kb_Control_Measure:
+    labels: ["Control_Measure", "Graphic"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["type", "coordinates"]
+
+  # --- OWL-TIME INSPIRED EXTENSIONS ---
+  kb_Time_Period:
+    labels: ["Time_Period", "Interval", "Epoch", "Fiscal_Year"]
+    key: ["name"]
+    required: ["name"]
+    optional: 
+      - "start_date" 
+      - "end_date"   
+      - "duration"   
+      - "type"       
+
+  # --- NEW ENTITIES (From Extraction Analysis) ---
+  kb_Concept:
+    labels: ["Concept", "Topic", "Buzzword"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["description", "acronym", "context"]
+
+  kb_Event:
+    labels: ["Event", "Demonstration", "Exercise"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["date", "location", "description"]
+
+  kb_Weapon:
+    labels: ["Weapon", "System", "Asset"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["type", "caliber", "manufacturer"]
+
+  kb_Software:
+    labels: ["Software", "Application", "Tool"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["version", "description"]
+
+  # --- EXISTING ENTITIES ---
+  kb_Capability:
+    labels: ["Capability", "Functional_Area"]
+    key: ["name"]
+    required: ["name"]
+    optional: 
+      - "description"
+      - "category_id"
+      - "canonical_name"
+      - "extracted_term"
+      - "confidence_score"
+
+  kb_Asset:
+    labels: ["Asset"]
+    key: ["name"]
+    required: ["name"]
+    optional: []
+
+  kb_System:
+    labels: ["kb_Asset", "Asset", "System"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["description"]
+
+  kb_Component:
+    labels: ["Component"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["description"]
+
+  kb_Tool:
+    labels: ["Tool"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["description"]
+
+  kb_Environment:
+    labels: ["Environment"]
+    key: ["name"]
+    required: ["name"]
+    optional: []
+
+  kb_Service:
+    labels: ["Service"]
+    key: ["name"]
+    required: ["name"]
+    optional: []
+
+  kb_Domain:
+    labels: ["Domain"]
+    key: ["name"]
+    required: ["name"]
+    optional: []
+
+  kb_Standard:
+    labels: ["Standard"]
+    key: ["name"]
+    required: ["name"]
+    optional: []
+
+  kb_Requirement:
+    labels: ["Requirement"]
+    key: ["id"]
+    required: ["id"]
+    optional: ["type", "priority", "text"]
+
+  kb_TRL:
+    labels: ["TRL"]
+    key: ["value"]
+    required: ["value"]
+    constraints:
+      value_range: [1, 9]
+
+  kb_Contract:
+    labels: ["Contract"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["type"]
+
+  # NEW: DETAILED CONTRACT ACTION (For R-3 Exhibit Line Items)
+  kb_Contract_Action:
+    labels: ["Contract_Action", "Award"]
+    key: ["contract_name", "performing_activity"]
+    required: ["contract_name"]
+    optional: 
+      - "contract_method"       # e.g., "C", "SS", "Option"
+      - "contract_type"         # e.g., "CPFF", "FFP"
+      - "award_date"
+      - "performing_activity"   # Vendor or Agency Name
+      - "funding_vehicle"       # e.g., "MIPR"
+
+  # NEW: COST BREAKDOWN STRUCTURE
+  kb_Cost_Category:
+    labels: ["Cost_Category", "WBS_Element"]
+    key: ["name", "project_context"]
+    required: ["name"]
+    optional: 
+      - "remarks"               # Captures the text notes in R-3 exhibits
+      - "category_type"         # e.g., "Product Development", "Test and Evaluation"
+
+  kb_Milestone:
+    labels: ["Milestone"]
+    key: ["name"]
+    required: ["name"]
+    optional: []
+
+  kb_Document:
+    labels: ["kb_Deliverable", "Deliverable", "Document"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["quantity", "date", "acronym"]
+
+  # --- INGESTION PIPELINE ENTITIES ---
+  kb_Ingestion_Pipeline:
+    labels: ["Pipeline", "Ingestion_Process"]
+    key: ["name"]
+    required: ["name"]
+    optional: ["version", "description", "input_formats"]
+
+  kb_Processing_Script:
+    labels: ["Script", "Tool"]
+    key: ["filename"]
+    required: ["filename"]
+    optional: ["version", "language", "dependencies"]
+
+  kb_Page:
+    labels: ["Page"]
+    key: ["document_uri", "page_number"]
+    required: ["document_uri", "page_number"]
+    optional: ["width", "height", "image_path"]
+
+  kb_Content_Block:
+    labels: ["Chunk", "Content_Block", "Element"]
+    key: ["id"]
+    required: ["id", "type"]
+    optional: ["text", "page_number", "bbox", "confidence", "md_content", "embedding_vector"]
+
+  kb_Extracted_Asset:
+    labels: ["Asset", "Artifact"]
+    key: ["filename"]
+    required: ["filename", "asset_type"]
+    optional: ["format", "file_path", "resolution"]
+
+relations:
+  # --- CORE DOMAIN RELATIONS ---
+  DEVELOPS:
+    domain: ["dbo_Organisation", "kb_Person"]
+    range: ["dbo_Technology", "kb_System", "kb_Component", "kb_Tool", "kb_Asset", "kb_Weapon", "kb_Software"]
+
+  VALIDATED_AT:
+      # Use: Links a solution to the Event where it is demonstrated/tested
+      domain: ["kb_Project", "kb_Capability", "kb_System", "kb_Prototype"]
+      range: ["kb_Event", "kb_Operation"]
+
+  MANUFACTURES:
+    domain: ["dbo_Organisation"]
+    range: ["kb_Weapon", "kb_System", "kb_Asset"]
+  
+  PROVIDES:
+    domain: ["dbo_Organisation", "kb_Service", "kb_System", "kb_Project"]
+    range: ["kb_Service", "kb_Capability", "kb_Tool", "dbo_Technology", "kb_Concept"]
+  
+  SPONSORS:
+    domain: ["dbo_Organisation", "kb_Person"]
+    range: ["kb_Program", "kb_Program_Element", "kb_Project", "kb_Event"] # Added Program_Element
+  
+  HOSTS:
+    domain: ["dbo_Organisation"]
+    range: ["kb_Event"]
+    
+  OPERATES:
+    domain: ["dbo_Organisation"]
+    range: ["kb_System", "kb_Service", "kb_Asset"]
+    
+  OPERATES_IN:
+    domain: ["kb_System", "kb_Project", "kb_Program"]
+    range: ["kb_Environment", "kb_Domain", "kb_Concept"]
+
+  LEADS:
+    domain: ["dbo_Organisation", "kb_Person"]
+    range: ["kb_Project", "kb_Program", "kb_Program_Element", "kb_Event"] # Added Program_Element
+
+  MANAGES:
+    domain: ["kb_Person", "dbo_Organisation"]
+    range: ["kb_Project", "kb_Program", "kb_Program_Element", "kb_Asset"] # Added Program_Element
+
+  IS_POC_FOR:
+    domain: ["kb_Person"]
+    range: ["kb_Project", "kb_Program", "dbo_Organisation"]
+    
+  OWNS:
+    domain: ["dbo_Organisation"]
+    range: ["kb_Project", "kb_Asset", "kb_System"]
+
+  PARTNER_OF:
+    domain: ["dbo_Organisation"]
+    range: ["dbo_Organisation", "kb_Project"]
+    
+  COLLABORATES_WITH:
+    domain: ["dbo_Organisation", "kb_Project"]
+    range: ["dbo_Organisation", "kb_Project"]
+
+  LOCATED_IN:
+    domain: ["dbo_Organisation", "kb_Project", "kb_Person", "kb_Asset", "kb_System", "kb_Contract_Action"] # Added Contract_Action
+    range: ["dbo_Location"]
+
+  MEMBER_OF:
+    domain: ["kb_Person"]
+    range: ["dbo_Organisation", "kb_Program", "kb_Project"]
+
+  FUNDS:
+    domain: ["dbo_Organisation", "kb_Program", "kb_Program_Element"] # Added Program_Element
+    range: ["kb_Project", "kb_Program"]
+  
+  DELIVERS:
+    domain: ["dbo_Organisation", "kb_Project", "kb_Contract"]
+    range: ["kb_Document", "kb_Prototype", "kb_Software"]
+
+  USES:
+    domain: ["kb_Project", "kb_System", "kb_Component", "dbo_Organisation"]
+    range: ["dbo_Technology", "kb_Tool", "kb_Service", "kb_Standard", "kb_Concept", "kb_Software"]
+
+  INTEGRATES:
+    domain: ["kb_Project", "kb_System"]
+    range: ["kb_System", "kb_Software", "kb_Project"]
+    
+  INTEGRATES_WITH:
+    domain: ["kb_System", "dbo_Technology", "kb_Component", "kb_Project"]
+    range: ["kb_System", "dbo_Technology", "kb_Component", "kb_Project"]
+
+  COMPRISES:
+    domain: ["kb_Program", "kb_Program_Element", "kb_Project"] # Added Program_Element
+    range: ["kb_Project", "kb_Component", "kb_Cost_Category"]   # Added Cost_Category
+
+  BELONGS_TO: # NEW: Inverse hierarchical relationship
+    domain: ["kb_Project"]
+    range: ["kb_Program_Element"]
+
+  MONITORS:
+    domain: ["kb_System", "kb_Project"]
+    range: ["kb_Asset", "kb_Weapon", "kb_Environment", "kb_Concept"]
+
+  IDENTIFIES:
+    domain: ["kb_System", "kb_Software", "kb_Project"]
+    range: ["kb_Concept", "dbo_Location"]
+
+  ENABLES:
+    domain: ["kb_Capability", "dbo_Technology", "kb_System", "kb_Project"]
+    range: ["kb_Capability", "kb_Project", "kb_Concept"]
+
+  ALIGNED_WITH:
+    domain: ["kb_Project", "kb_Program", "dbo_Organisation"]
+    range: ["kb_Standard", "kb_Domain", "kb_Program", "kb_Document"]
+
+  FULFILLS:
+    domain: ["kb_Project", "kb_System"]
+    range: ["kb_Document", "kb_Requirement"]
+  
+  REQUIRED_BY:
+    domain: ["kb_Project", "kb_Capability"]
+    range: ["kb_Document", "kb_Requirement"]
+
+  IDENTIFIED_NEED_IN:
+    domain: ["kb_Project", "kb_Capability"]
+    range: ["kb_Program", "kb_Document"]
+
+  ADDRESSES:
+      domain: ["kb_Project", "kb_Technology", "kb_System"]
+      range: ["kb_Concept", "kb_TTP", "kb_Requirement", "kb_Program"]
+    
+  PARTICIPATES_IN:
+    domain: ["dbo_Organisation", "kb_Project", "kb_Person"]
+    range: ["kb_Event"]
+
+  # --- DOD FINANCIAL & ACQUISITION RELATIONS (NEW) ---
+  HAS_BUDGET_PROFILE:
+    domain: ["kb_Program_Element", "kb_Project", "kb_Contract_Action"]
+    range: ["kb_Budget_Profile"]
+
+  ADJUSTED_BY:
+    domain: ["kb_Budget_Profile"]
+    range: ["kb_Budget_Profile"] # Links a base budget to its adjustments (e.g., Congressional Adds)
+
+  INCURRED_COST:
+    domain: ["kb_Project"]
+    range: ["kb_Cost_Category"]
+
+  INCLUDES_ITEM:
+    domain: ["kb_Cost_Category"]
+    range: ["kb_Contract_Action"]
+
+  PERFORMED_BY:
+    domain: ["kb_Contract_Action"]
+    range: ["dbo_Organisation"] # Links "PerformingActivity" to Organization
+
+  # --- TEMPORAL NARRATIVE RELATIONS (NEW) ---
+  REPORTS_PROGRESS:
+    domain: ["kb_Project", "kb_Program_Element"]
+    range: ["kb_Narrative_Report"]
+
+  DESCRIBES_PERIOD:
+    domain: ["kb_Narrative_Report"]
+    range: ["kb_Time_Period"] # Links "FY 2024 Accomplishments" to "FY2024"
+
+  # --- LOGISTICS RELATIONS (SCOR) ---
+  REQUIRES_PROCESS:
+    domain: ["kb_System", "kb_Project", "kb_Capability"]
+    range: ["kb_Logistics_Process"]
+
+  MEASURED_BY:
+    domain: ["kb_Logistics_Process", "kb_Project", "kb_System"]
+    range: ["kb_Metric"]
+
+  ENABLES_SUSTAINMENT:
+    domain: ["kb_Logistics_Process"]
+    range: ["kb_Operation", "kb_Campaign"]
+
+  # --- TEMPORAL RELATIONS (OWL-Time) ---
+  OCCURRED_DURING:
+    domain: ["kb_Event", "kb_Incident", "kb_Operation", "kb_Milestone", "kb_Contract_Action"] # Added Contract_Action
+    range: ["kb_Time_Period", "kb_Campaign", "kb_Operation"]
+
+  PRECEDES:
+    domain: ["kb_Event", "kb_Incident", "kb_Order", "kb_Milestone"]
+    range: ["kb_Event", "kb_Incident", "kb_Order", "kb_Milestone"]
+
+  OVERLAPS_WITH:
+    domain: ["kb_Campaign", "kb_Operation", "kb_Project"]
+    range: ["kb_Campaign", "kb_Operation", "kb_Event"]
+
+  # --- OPERATIONAL RELATIONS (C2) ---
+  SUPPORTS_OPERATION:
+    domain: ["kb_System", "kb_Project"]
+    range: ["kb_Operation"]
+
+  ISSUED_BY:
+    domain: ["kb_Order"]
+    range: ["kb_Person", "dbo_Organisation"]
+    
+  GOVERNS:
+    domain: ["kb_Order", "kb_Control_Measure"]
+    range: ["kb_Operation", "kb_Event"]
+
+  # --- THREAT RELATIONS (STIX) ---
+  ATTRIBUTES_TO:
+    domain: ["kb_Event", "kb_Incident", "kb_Campaign"]
+    range: ["kb_Threat_Actor", "kb_Person"] 
+
+  EMPLOYS:
+    domain: ["kb_Threat_Actor", "kb_Campaign"]
+    range: ["kb_TTP", "kb_Weapon"]
+
+  MITIGATES:
+    domain: ["kb_Project", "kb_System", "kb_Capability", "kb_Concept"]
+    range: ["kb_TTP", "kb_Threat_Actor", "kb_Vulnerability"]
+
+  EXPLOITS:
+    domain: ["kb_TTP", "kb_Weapon", "kb_Threat_Actor"]
+    range: ["kb_Vulnerability", "kb_System"]
+
+  # --- DOCUMENT STRUCTURE & GRAPHRAG RELATIONS ---
+  EXECUTED_BY:
+    domain: ["kb_Ingestion_Pipeline"]
+    range: ["kb_Processing_Script"]
+
+  PROCESSED_WITH:
+    domain: ["kb_Document"]
+    range: ["kb_Ingestion_Pipeline", "kb_Processing_Script"]
+
+  HAS_PAGE:
+    domain: ["kb_Document"]
+    range: ["kb_Page"]
+
+  CONTAINS_BLOCK:
+    domain: ["kb_Page", "kb_Document"]
+    range: ["kb_Content_Block"]
+
+  EXTRACTED_AS:
+    domain: ["kb_Content_Block"]
+    range: ["kb_Extracted_Asset"]
+
+  SNAPPED_TO:
+    domain: ["kb_Content_Block", "kb_Extracted_Asset"]
+    range: ["kb_Content_Block"]
+
+  MENTIONS:
+    domain: ["kb_Content_Block", "kb_Extracted_Asset"]
+    range:
+      [
+        "kb_Capability",
+        "kb_System",
+        "kb_Project",
+        "dbo_Organisation",
+        "dbo_Location",
+        "kb_Program",
+        "kb_Program_Element", # Added
+        "dbo_Technology",
+        "kb_Person",
+        "kb_Concept",
+        "kb_Event",
+        "kb_Weapon",
+        "kb_Software",
+        "kb_Document",
+        "kb_Threat_Actor",
+        "kb_Incident",
+        "kb_Operation",
+        "kb_Budget_Profile", # Added
+        "kb_Narrative_Report" # Added
+      ]
+
+  CITED_IN:
+    domain:
+      [
+        "kb_Capability",
+        "kb_System",
+        "kb_Project",
+        "dbo_Organisation",
+        "dbo_Location",
+        "kb_Program",
+        "kb_Program_Element", # Added
+        "dbo_Technology",
+        "kb_Person",
+        "kb_Concept",
+        "kb_Event",
+        "kb_Weapon",
+        "kb_Software",
+        "kb_Document",
+        "kb_Threat_Actor",
+        "kb_Incident",
+        "kb_Operation",
+        "kb_Budget_Profile", # Added
+        "kb_Narrative_Report" # Added
+      ]
+    range: ["kb_Document", "kb_Content_Block"]

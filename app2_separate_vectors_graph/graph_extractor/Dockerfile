@@ -1,0 +1,10 @@
+FROM public.ecr.aws/lambda/python:3.11
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Copy the app code AND the schema
+COPY app.py .
+COPY schema_contract.yaml .
+
+CMD ["app.lambda_handler"]

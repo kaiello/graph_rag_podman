@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "split-chunk-graph"
+resolve_s3 = true
+s3_prefix = "split-chunk-graph"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+image_repositories = ["GraphMergerFunction=757905896558.dkr.ecr.us-east-1.amazonaws.com/chunksplitter7106afca/graphmergerfunction1f46c423repo"]
+parameter_overrides = "InputBucketName=\"quad-processing-input-2025\" OutputBucketName=\"my-docling-output-artifacts-2025\" GraphBucketName=\"graph-data-text\" ModelId=\"amazon.titan-text-premier-v1\""
+
+[default.global.parameters]
+region = "us-east-1"
