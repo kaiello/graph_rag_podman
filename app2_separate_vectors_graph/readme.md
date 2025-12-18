@@ -30,49 +30,91 @@ graph LR
 
 ```text
 /
-├── template.yaml                 # AWS SAM Infrastructure definition
-├── samconfig.toml                # Deployment configuration
+├── scripts/                      # Local build/run scripts
+│   ├── build.sh
+│   └── run.sh
+├── events/                       # Mock S3 event JSONs for local testing
 ├── graph_extractor/              # Step 1: LLM Extraction Service
-│   ├── app.py                    # Extraction logic (Bedrock)
-│   ├── requirements.txt          # Dependencies (boto3, PyYAML)
-│   └── schema_contract.yaml      # (Optional) Graph Schema definition
-└── graph_merger/                 # Step 2: Data Merge Service
-    ├── app.py                    # Merge logic
-    ├── Dockerfile                # Container definition (for large memory tasks)
-    └── requirements.txt          # Dependencies (boto3)
+│   ├── src/
+│   ├── Containerfile             # Local Podman definition
+│   └── schema_contract.yaml
+├── graph_merger/                 # Step 2: Data Merge Service
+│   ├── src/
+│   └── Containerfile
+├── splitter/                     # Step 0: Upstream Processor
+│   ├── src/
+│   └── Containerfile
+├── template.yaml                 # AWS SAM Infrastructure definition
+└── samconfig.toml                # Deployment configuration
 
 ```
 
-## ✅ Prerequisites
+## 💻 Local Development (Podman)
 
-* **AWS CLI** configured with Administrator permissions.
-* **AWS SAM CLI** installed.
-* **Docker** (Desktop or Podman) running (required for building the Merger image).
-* **Python 3.12** installed locally.
+While `sam build` is used for AWS deployment, we use **Podman** for rapid local iteration and logic verification.
 
-## 🚀 Deployment
+### 1. Prerequisites
+
+* Podman installed.
+* AWS Credentials in a `.env` file (required for `graph_extractor` to call Bedrock).
+
+### 2. Setup Credentials
+
+Copy the example env file:
+
+```bash
+cp .env.example .env
+
+```
+
+Fill in your `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+
+### 3. Build Functions
+
+You can build all functions or a specific one:
+
+```bash
+# Build all
+./scripts/build.sh all
+
+# Build just the extractor
+./scripts/build.sh graph_extractor
+
+```
+
+### 4. Run & Test (Mocking S3)
+
+We simulate S3 triggers locally by passing JSON event files to the container.
+
+1. **Create a Test Event:** Ensure you have a mock event in `events/s3_event.json` that matches the structure expected by your handler.
+2. **Run the Script:**
+
+```bash
+# Test the Splitter
+./scripts/run.sh splitter events/docling_output.json
+
+# Test the Extractor (Calls Bedrock)
+./scripts/run.sh graph_extractor events/s3_text_upload.json
+
+```
+
+---
+
+## 🚀 AWS Deployment (SAM)
 
 1. **Build the Application**
-This uses a hybrid build: local Python for the Extractor (speed) and Docker for the Merger (isolation).
+
 ```bash
 sam build
 
 ```
 
-
 2. **Deploy to AWS**
-Run the guided deployment to set up the stack.
+
 ```bash
 sam deploy --guided
 
 ```
-
-
-* **Stack Name:** `split-chunk-graph`
-* **Region:** `us-east-1` (or your Bedrock supported region)
-* **Parameter Overrides:** Accept defaults or customize bucket names.
-
-
 
 ## ⚙️ Configuration
 
@@ -91,40 +133,6 @@ Because the input bucket (`my-docling-output-artifacts-2025`) is an **existing e
 
 ### 2. Environment Variables
 
-You can adjust these in `template.yaml` or via the AWS Console:
-
 * **LLM_MODEL:** Defaults to `amazon.titan-text-express-v1`.
-* *Recommended:* `amazon.titan-text-premier-v1` or `anthropic.claude-3-haiku-20240307-v1:0` for better graph quality.
-
-
 * **VECTOR_BUCKET:** The bucket where your upstream splitter saves vector files.
-
-## 📥 Usage (Data Flow)
-
-To process a document, ensure your **Splitter** creates two files with the following naming convention and uploads them to your artifact bucket:
-
-1. **Text File:** `filename_text.jsonl`
-* *Content:* `{"id": "doc_1", "text": "...", "metadata": {...}}`
-* *Action:* Triggers the **Extractor**.
-
-
-2. **Vector File:** `filename.jsonl` (or `filename_embeddings.jsonl` - configurable in Merger `app.py`)
-* *Content:* `{"id": "doc_1", "embeddings": [...]}`
-* *Action:* Pasively waits to be fetched by the **Merger**.
-
-
-
-**Output:**
-The final merged file will appear in the `graph-data-final` bucket as `filename_graph_upload.jsonl`.
-
-## 🛠 Troubleshooting
-
-* **"Bucket name should not contain '_'"**: S3 bucket names must use hyphens, not underscores. Ensure `template.yaml` uses `graph-data-final`.
-* **"Circular Dependency"**: Ensure you are not using `!Ref BucketName` inside the IAM Policies of the same template. Use hardcoded names or separate parameters.
-* **Empty Nodes/Edges**:
-* Check CloudWatch logs for `JSONDecodeError`.
-* Switch to a more capable model (e.g., Titan Premier or Claude).
-* Verify the prompt in `graph_extractor/app.py` is receiving clean text (not embeddings).
-
-
-* **Docker Build Hangs**: If `sam build --use-container` hangs on Windows, ensure `Runtime: python3.12` is set in the template for the Extractor and run `sam build` without the container flag.
+```
